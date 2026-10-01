@@ -86,44 +86,55 @@ export default class SizerExtension extends Extension {
     return global.display.get_focus_window();
   }
 
-  _getMonitorIndex() {
-    return global.display.get_current_monitor();
+  _getMonitorIndex(window) {
+    return global.display.get_monitor_index_for_rect(window.get_frame_rect());
   }
 
-  _getMonitorGeometry() {
-    return global.display.get_monitor_geometry(this._getMonitorIndex());
+  _getMonitorScale(window) {
+    return global.display.get_monitor_scale(this._getMonitorIndex(window));
   }
 
-  _getWorkArea() {
+  _getMonitorGeometry(window) {
+    return global.display.get_monitor_geometry(this._getMonitorIndex(window));
+  }
+
+  _getWorkArea(window) {
     return global.workspace_manager
       .get_active_workspace()
-      .get_work_area_for_monitor(this._getMonitorIndex());
+      .get_work_area_for_monitor(this._getMonitorIndex(window));
+  }
+
+  _scale(value, scale) {
+    return Math.round(value * scale);
+  }
+
+  _unscale(value, scale) {
+    return value / scale;
   }
 
   // https://gitlab.gnome.org/GNOME/gnome-shell-extensions/-/blob/gnome-46/extensions/screenshot-window-sizer/extension.js
   _notifySizeChange(window) {
-    const { scaleFactor } = St.ThemeContext.get_for_stage(global.stage);
-    let newFrameRect = window.get_frame_rect();
+    const scaleFactor = this._getMonitorScale(window);
+    const frame = window.get_frame_rect();
+    const monitor = this._getMonitorGeometry(window);
+    const workArea = this._getWorkArea(window);
+
     let message = "";
     message += "Pos: (%d, %d)\n".format(
-      newFrameRect.x / scaleFactor,
-      newFrameRect.y / scaleFactor
+      this._unscale(frame.x, scaleFactor),
+      this._unscale(frame.y, scaleFactor),
     );
     message += "Size: %dx%d\n".format(
-      newFrameRect.width / scaleFactor,
-      newFrameRect.height / scaleFactor
+      this._unscale(frame.width, scaleFactor),
+      this._unscale(frame.height, scaleFactor),
     );
-
-    const monitor = this._getMonitorGeometry();
     message += "Monitor: %dx%d\n".format(
-      monitor.width / scaleFactor,
-      monitor.height / scaleFactor
+      this._unscale(monitor.width, scaleFactor),
+      this._unscale(monitor.height, scaleFactor),
     );
-
-    const workArea = this._getWorkArea();
     message += "WorkArea: %dx%d".format(
-      workArea.width / scaleFactor,
-      workArea.height / scaleFactor
+      this._unscale(workArea.width, scaleFactor),
+      this._unscale(workArea.height, scaleFactor),
     );
 
     Main.notify(`${window.get_wm_class()} [${window.get_title()}]`, message);
@@ -138,8 +149,7 @@ export default class SizerExtension extends Extension {
     );
   }
 
-  _isEntireWorkAreaWidth(area) {
-    const workArea = this._getWorkArea();
+  _isEntireWorkAreaWidth(area, workArea) {
     return (
       this._isWithinWorkArea(area, workArea) &&
       area.x === workArea.x &&
@@ -147,8 +157,7 @@ export default class SizerExtension extends Extension {
     );
   }
 
-  _isEntireWorkAreaHeight(area) {
-    const workArea = this._getWorkArea();
+  _isEntireWorkAreaHeight(area, workArea) {
     return (
       this._isWithinWorkArea(area, workArea) &&
       area.y === workArea.y &&
@@ -175,9 +184,11 @@ export default class SizerExtension extends Extension {
   }
 
   MoveResize(x, y, width, height) {
-    const area = { x, y, width, height };
     const window = this._getWindow();
     if (!window) return;
+
+    const area = { x, y, width, height };
+    const workArea = this._getWorkArea(window);
 
     // GNOME has its own built-in tiling that is activated when pressing
     // Super+Left/Right. There does not appear to be any way to detect this
@@ -188,13 +199,13 @@ export default class SizerExtension extends Extension {
 
     window.move_resize_frame(true, x, y, width, height);
 
-    if (this._isEntireWorkAreaWidth(area)) {
+    if (this._isEntireWorkAreaWidth(area, workArea)) {
       window.maximize(Meta.MaximizeFlags.HORIZONTAL);
     } else {
       window.unmaximize(Meta.MaximizeFlags.HORIZONTAL);
     }
 
-    if (this._isEntireWorkAreaHeight(area)) {
+    if (this._isEntireWorkAreaHeight(area, workArea)) {
       window.maximize(Meta.MaximizeFlags.VERTICAL);
     } else {
       window.unmaximize(Meta.MaximizeFlags.VERTICAL);
@@ -233,36 +244,82 @@ export default class SizerExtension extends Extension {
 
   Resize(width, height) {
     const window = this._getWindow();
+    if (!window) return;
+
     const frame = window.get_frame_rect();
-    this.MoveResize(frame.x, frame.y, width, height);
+    const scaleFactor = this._getMonitorScale(window);
+
+    this.MoveResize(
+      frame.x,
+      frame.y,
+      this._scale(width, scaleFactor),
+      this._scale(height, scaleFactor),
+    );
   }
 
   MoveInMonitor(x, y) {
-    const monitor = this._getMonitorGeometry();
-    this.Move(monitor.x + x, monitor.y + y);
+    const window = this._getWindow();
+    if (!window) return;
+
+    const monitor = this._getMonitorGeometry(window);
+    const scaleFactor = this._getMonitorScale(window);
+
+    this.Move(
+      monitor.x + this._scale(x, scaleFactor),
+      monitor.y + this._scale(y, scaleFactor),
+    );
   }
 
   MoveResizeInMonitor(x, y, width, height) {
-    const monitor = this._getMonitorGeometry();
-    this.MoveResize(monitor.x + x, monitor.y + y, width, height);
+    const window = this._getWindow();
+    if (!window) return;
+
+    const monitor = this._getMonitorGeometry(window);
+    const scaleFactor = this._getMonitorScale(window);
+
+    this.MoveResize(
+      monitor.x + this._scale(x, scaleFactor),
+      monitor.y + this._scale(y, scaleFactor),
+      this._scale(width, scaleFactor),
+      this._scale(height, scaleFactor),
+    );
   }
 
   MoveInWorkArea(x, y) {
-    const workArea = this._getWorkArea();
-    this.Move(workArea.x + x, workArea.y + y);
+    const window = this._getWindow();
+    if (!window) return;
+
+    const workArea = this._getWorkArea(window);
+    const scaleFactor = this._getMonitorScale(window);
+
+    this.Move(
+      workArea.x + this._scale(x, scaleFactor),
+      workArea.y + this._scale(y, scaleFactor),
+    );
   }
 
   MoveResizeInWorkArea(x, y, width, height) {
-    const workArea = this._getWorkArea();
-    this.MoveResize(workArea.x + x, workArea.y + y, width, height);
+    const window = this._getWindow();
+    if (!window) return;
+
+    const workArea = this._getWorkArea(window);
+    const scaleFactor = this._getMonitorScale(window);
+
+    this.MoveResize(
+      workArea.x + this._scale(x, scaleFactor),
+      workArea.y + this._scale(y, scaleFactor),
+      this._scale(width, scaleFactor),
+      this._scale(height, scaleFactor),
+    );
   }
 
   CenterInWorkArea() {
     const window = this._getWindow();
-    const workArea = this._getWorkArea();
     if (!window) return;
 
+    const workArea = this._getWorkArea(window);
     const frame = window.get_frame_rect();
+
     const x = workArea.x + Math.floor((workArea.width - frame.width) / 2);
     const y = workArea.y + Math.floor((workArea.height - frame.height) / 2);
 
