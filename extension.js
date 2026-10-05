@@ -176,7 +176,7 @@ export default class SizerExtension extends Extension {
     const window = this._getWindow();
     if (!window) return;
 
-    if (window.get_maximized()) {
+    if (window.maximized_horizontally || window.maximized_vertically) {
       window.unmaximize(Meta.MaximizeFlags.BOTH);
     }
 
@@ -193,7 +193,7 @@ export default class SizerExtension extends Extension {
     // GNOME has its own built-in tiling that is activated when pressing
     // Super+Left/Right. There does not appear to be any way to detect this
     // through the Meta APIs, so we always unmaximize to break the tiling.
-    if (window.get_maximized()) {
+    if (window.maximized_horizontally || window.maximized_vertically) {
       window.unmaximize(Meta.MaximizeFlags.BOTH);
     }
 
