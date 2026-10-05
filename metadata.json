@@ -2,5 +2,5 @@
   "name": "Sizer",
   "description": "Expose resizing APIs via D-Bus",
   "uuid": "sizer@duclm278.github.io",
-  "shell-version": ["46"]
+  "shell-version": ["46", "47", "48", "49", "50"]
 }
